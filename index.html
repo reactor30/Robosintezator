@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <!-- Важные мета-теги для мобильных: запрет зума и фиксация ширины -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Робо-Синтезатор</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a24;
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden; /* Запрещаем прокрутку страницы */
+            touch-action: none; /* Запрещаем системные жесты браузера */
+            user-select: none;
+        }
+
+        h1 {
+            color: #00ffcc;
+            text-shadow: 0 0 10px #00ffcc;
+            margin: 15px 0 5px 0;
+            font-size: 1.5rem;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+            padding: 0 10px;
+        }
+
+        select, button {
+            background: #2d2d3d;
+            color: #00ffcc;
+            border: 1px solid #00ffcc;
+            padding: 8px 15px;
+            border-radius: 5px;
+            font-size: 1rem;
+            font-family: inherit;
+        }
+
+        #startBtn {
+            background: #ff0055;
+            border-color: #ff0055;
+            color: white;
+            font-weight: bold;
+            box-shadow: 0 0 15px #ff0055;
+        }
+
+        .keyboard {
+            display: flex;
+            gap: 5px;
+            width: 95%;
+            max-width: 600px;
+            height: 60vh;
+            padding: 10px;
+        }
+
+        .key {
+            flex: 1;
+            background: linear-gradient(to bottom, #4a4a5a, #2d2d3d);
+            border: 2px solid #555;
+            border-radius: 0 0 10px 10px;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            padding-bottom: 15px;
+            font-size: 1.2rem;
+            color: #aaa;
+            transition: all 0.1s;
+            box-shadow: 0 5px 0 #111;
+        }
+
+        .key.active {
+            background: linear-gradient(to bottom, #00ffcc, #00997a);
+            color: #000;
+            transform: translateY(5px);
+            box-shadow: 0 0 20px #00ffcc, 0 0 5px #111;
+            border-color: #00ffcc;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>РОБО-СИНТЕЗАТОР</h1>
+    
+    <div class="controls">
+        <!-- Кнопка нужна, потому что мобильные браузеры блокируют звук до первого клика -->
+        <button id="startBtn">ВКЛЮЧИТЬ ЗВУК</button>
+        <select id="waveType">
+            <option value="sine">Синус (Мягкий)</option>
+            <option value="square">Квадрат (8-бит)</option>
+            <option value="sawtooth">Пила (Резкий)</option>
+            <option value="triangle">Треугольник (Флейта)</option>
+        </select>
+    </div>
+
+    <div class="keyboard" id="keyboard">
+        <!-- Клавиши генерируются в JS, но можно и статически -->
+        <div class="key" data-freq="261.63">До<br><small>C4</small></div>
+        <div class="key" data-freq="293.66">Ре<br><small>D4</small></div>
+        <div class="key" data-freq="329.63">Ми<br><small>E4</small></div>
+        <div class="key" data-freq="349.23">Фа<br><small>F4</small></div>
+        <div class="key" data-freq="392.00">Соль<br><small>G4</small></div>
+        <div class="key" data-freq="440.00">Ля<br><small>A4</small></div>
+        <div class="key" data-freq="493.88">Си<br><small>B4</small></div>
+        <div class="key" data-freq="523.25">До<br><small>C5</small></div>
+    </div>
+
+    <script>
+        let audioCtx = null;
+        const activeOscillators = {};
+        const startBtn = document.getElementById('startBtn');
+        const waveSelect = document.getElementById('waveType');
+        const keys = document.querySelectorAll('.key');
+
+        // Инициализация аудио (требование мобильных браузеров)
+        startBtn.addEventListener('click', () => {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            startBtn.innerText = "ЗВУК ВКЛЮЧЕН";
+            startBtn.style.background = "#00aa55";
+            startBtn.style.boxShadow = "0 0 15px #00aa55";
+        });
+
+        // Функция начала воспроизведения
+        function startNote(freq, element) {
+            if (!audioCtx) return; // Если не нажали "Включить звук"
+
+            // Если нота уже играет, не создаем дубликат
+            if (activeOscillators[freq]) return;
+
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            osc.type = waveSelect.value;
+            osc.frequency.value = freq;
+            
+            // Плавное нарастание, чтобы не было щелчка
+            gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.05);
+
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            osc.start();
+
+            activeOscillators[freq] = { osc, gainNode };
+            element.classList.add('active');
+        }
+
+        // Функция остановки воспроизведения
+        function stopNote(freq, element) {
+            if (!activeOscillators[freq]) return;
+
+            const { osc, gainNode } = activeOscillators[freq];
+            const now = audioCtx.currentTime;
+
+            // Плавное затухание (Release)
+            gainNode.gain.cancelScheduledValues(now);
+            gainNode.gain.setValueAtTime(gainNode.gain.value, now);
+            gainNode.gain.linearRampToValueAtTime(0.0001, now + 0.2);
+
+            // Останавливаем и удаляем после затухания
+            setTimeout(() => {
+                osc.stop();
+                osc.disconnect();
+                gainNode.disconnect();
+                delete activeOscillators[freq];
+            }, 200);
+
+            element.classList.remove('active');
+        }
+
+        // Навешиваем события для мыши (для проверки на ПК) и тача (для смартфонов)
+        keys.forEach(key => {
+            const freq = parseFloat(key.dataset.freq);
+
+            // Мышь
+            key.addEventListener('mousedown', (e) => { e.preventDefault(); startNote(freq, key); });
+            key.addEventListener('mouseup', (e) => { e.preventDefault(); stopNote(freq, key); });
+            key.addEventListener('mouseleave', (e) => { if(key.classList.contains('active')) stopNote(freq, key); });
+
+            // Сенсор (смартфоны)
+            key.addEventListener('touchstart', (e) => { e.preventDefault(); startNote(freq, key); });
+            key.addEventListener('touchend', (e) => { e.preventDefault(); stopNote(freq, key); });
+            key.addEventListener('touchcancel', (e) => { e.preventDefault(); stopNote(freq, key); });
+        });
+    </script>
+</body>
+</html>
